@@ -1,0 +1,360 @@
+---
+title: "Group2: ProjectFinalReport"
+date: "2023-12-06"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
+```
+#### Team Members
+*Prashasti Patil, Rishabh Jain, Surabhi Chanchal, Tejaswini Bhosle, Navya Madhuri Buyyana Pragada* 
+  
+## AI driven *"Likes"* prediction of Hugging Face Models
+
+##### We've developed a predictive model that harness diverse parameters and attributes to predict the popularity and effectiveness of Hugging Face API models in terms of 'LIKES.' Our predictive model now reliably estimates how well these models will perform based on their specific characteristics. 
+##### Find the Hugging Face Models API here : [Click here](https://huggingface.co/api/models) 
+
+##### Include Libraries
+```{r lib}
+library(kableExtra)
+library(httr)
+library(dplyr)
+library(purrr)
+library(tidyverse)
+library(ggplot2)
+library(corrplot)
+library(scales)
+library(plotly)
+library(h2o)
+library(tidyverse)
+library(skimr)
+library(recipes)
+library(stringr)
+library(tidyverse)
+library(kableExtra)
+library(dplyr)
+library("DALEX")
+library("DALEXtra")
+library(scales)
+library(h2o)
+```
+
+
+#### Extracting the data from API
+Using the Hugging Face API key to access data. By iterating through the API endpoints and applying the condition - 'likes' count greater than 0, we have obtained a curated set of models that have garnered positive reception or attention based on user likes. This method allows us to focus on models that are more popular or positively rated, providing valuable insights or options for further analysis, utilization, or integration within our project or application.
+
+#### Dataset Details
+link as provided above and data can be downloaded from [Google Drive](https://drive.google.com/file/d/19qKyXYozGu3vx4Dyn1BBi4VAdQGrqXde/view) 
+
+The data includes information about Hugging Face API models, such as model ID, downloads, creation date, pipeline tag, and various tags. 
+
+##### Data Cleaning
+We have prepared this dataset by filtering data with 0 likes and we checked for na values.
+Obtained top 20 Tags for the models and made them our predictors using pivot wider.
+
+## View the Data
+```{r dataview}
+new_df <- read_csv("Group2_HuggingFaceDataset.csv")
+kable(head(new_df,10)) |> kable_styling(bootstrap_options = c("hover"))
+```
+
+## Exploratory Data Analysis
+
+### Analyzing and Visualizing Top Tags across Models
+The code generates a bar plot using ggplot, where the x-axis represents the tags reordered by their frequency, and the y-axis displays the count of each tag. This visualization provides a clear insight into the top 20 tags most commonly associated with the various models in the dataset.
+```{r} 
+tags_columns <- new_df[, c("transformers", "endpoints_compatible", "pytorch", "autotrain_compatible", 
+                           "license.apache.2.0" ,  "bert" ,"text.generation.inference" ,"tensorboard",
+                          "text.classification",  "en", "jax" ,"generated_from_trainer","text.generation", "text2text.generation",
+                          "gpt2", "has_space","model.index" , "tf", "automatic.speech.recognition","fill.mask")]
+ 
+# Sum the occurrences of each tag
+tags_sum <- colSums(tags_columns)
+ 
+# Create a data frame with the tag sums
+tags_df <- data.frame(Tag = names(tags_sum), Frequency = tags_sum)
+ 
+# Order the data frame by frequency in descending order
+tags_df <- tags_df[order(-tags_df$Frequency), ]
+ 
+# Create a bar plot
+ggplot(tags_df, aes(x = reorder(Tag, -Frequency), y = Frequency, fill = Tag)) +
+  geom_bar(stat = "identity") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  labs(title = "Top 20 Tags across Models", x = "Tag", y = "Count")
+
+```
+
+
+#### We can see from above graph that the tags `endpoints_compatible`, `pytorch` and `transformers` are the most frequent with counts more than 20k
+
+
+### Exploring Top 20 Pipeline Tags Distribution
+
+The x-axis displays the pipeline tags reordered by their frequency, while the y-axis represents the count of occurrences for each tag. This visualization offers a concise view of the most prevalent pipeline tags present in the dataset and their respective frequencies.
+
+```{r}
+## Plot 2 - Pipe line_tags Count
+ 
+pipelinetag_counts <- new_df %>%
+  count(pipeline_tag) %>% arrange(desc(n))
+ 
+ 
+top_20_tags <- head(pipelinetag_counts, 20)
+top_20_tags
+ 
+ggplot(top_20_tags, aes(x = reorder(pipeline_tag, -n), y = n)) +
+  geom_bar(stat = "identity", fill = "skyblue", color = "black") +
+  labs(title = "Top 20 Pipeline Tags", x = "Pipeline Tags", y = "Count") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+```
+
+#### From above graph its clear that `text-generation` is the most used pipeline tag for models in our dataset
+
+
+### Repository Access Distribution: Public vs. Private
+The chart displays two segments representing Public and Private repositories. This visualization offers an immediate understanding of the proportion of Public and Private repositories in the dataset.
+
+```{r}
+# Assuming 'private' is the column in new_df
+# Convert 'private' to factor for better representation
+new_df$private <- factor(new_df$private, levels = c(0, 1), labels = c("Public", "Private"))
+ 
+# Create a summary table with counts
+access_counts_df <- as.data.frame(table(new_df$private))
+ 
+# Calculate percentages
+access_counts_df$percentage <- access_counts_df$Freq / sum(access_counts_df$Freq) * 100
+ 
+threshold <- 0.1
+ 
+ggplot(access_counts_df, aes(x = "", y = Freq, fill = Var1)) +
+  geom_bar(stat = "identity", width = 1, color = "white") +
+  geom_text(aes(label = ifelse(percentage >= threshold, paste0(round(percentage, 1), "%"), "")), 
+            position = position_stack(vjust = 0.5), color = "black", size = 7) +
+  coord_polar("y") +
+  labs(title = "Public Vs Private Repository") +
+  scale_fill_manual(values = c("Public" = alpha("blue" , 0.5), "Private" = "red")) +
+  theme_void()
+
+
+```
+
+
+#### This chart shows that we have no private repositories and only public repositories. This is the reason this column is ignored by h2o model as a constant column as it does not contribute to any prediction.
+
+
+### Understanding Feature Correlation: Correlation Matrix
+This visualization aids in understanding the relationships between different numeric features within the dataset. It helps identify strong positive, negative, or negligible correlations, providing insights into potential feature interactions or redundancies. 
+
+```{r}
+cor_data <- new_df[, 2:21]
+ 
+# Select only numeric columns for correlation analysis
+numeric_cor_data <- cor_data[sapply(cor_data, is.numeric)]
+ 
+# Calculate the correlation matrix
+correlation_matrix <- cor(numeric_cor_data)
+ 
+my_colors <- colorRampPalette(c("black", "blue"))(20)
+square_width = 5
+# Plot the correlation matrix using corrplot
+corrplot(correlation_matrix, method = "number" , tl.cex = 0.7 , col = my_colors , addrect = 2, 
+         number.cex = 0.9 )
+
+```
+
+#### The above matrix shows that no two predictors are highly correlated.
+
+
+### Exploring Model Engagement: Likes vs. Downloads
+This R code generates an interactive plot illustrating the relationship between 'likes' and 'downloads' for various model IDs. The scatter plot represents each model's engagement, plotting the number of likes against the number of downloads.
+
+``` {r}
+p <- ggplot(new_df, aes(x = likes, y = downloads, text = paste("Model ID: ", model_id, "<br>Likes: ", comma(likes), "<br>Downloads: ", comma(downloads)))) +
+  geom_point(color = "#3498db", size = 3) +
+  geom_smooth(method = "lm", se = FALSE, color = "#e74c3c", linetype = "solid", size = 1) +
+  labs(title = "Likes vs Downloads",
+       x = "Likes",
+       y = "Downloads (Millions)") +
+  theme_minimal() +
+  theme(plot.title = element_text(hjust = 0.5),  # Center the title
+        panel.grid.major = element_blank(),      # Remove major grid lines
+        panel.grid.minor = element_blank(),      # Remove minor grid lines
+        axis.text = element_text(size = 10),     # Adjust text size
+        axis.title = element_text(size = 12))    # Adjust title size
+ 
+# Format the y-axis in the count of million
+ 
+p <- p + scale_y_continuous(labels = scales::comma_format(scale = 1e-6))
+ 
+# Convert ggplot to a plotly object
+ 
+p <- ggplotly(p, tooltip = "text", dynamicTicks = TRUE)
+ 
+# Set the color of the tooltip text to black
+ 
+p$x$data[[1]]$hoverlabel$font$color <- 'black'
+ 
+# Set the background color of the tooltip to white
+ 
+p$x$data[[1]]$hoverlabel$bgcolor <- 'white'
+ 
+# Print the interactive plot
+ 
+p
+
+
+```
+
+#### From the above graph we can see that we have some models where number of likes are more but downloads very less and vice versa. This shows that even if number of downloads/likes are more it is not necessary that it will have more likes/downloads respectively.
+
+
+## ---- Predicting Likes for a New Model Observation ----
+
+#### The below code uses a pre-trained Random Forest model loaded via H2O to predict the number of likes for a new model observation based on certain features.
+Random forest is a commonly-used machine learning algorithm trademarked by Leo Breiman and Adele Cutler, which combines the output of multiple decision trees to reach a single result. Its ease of use and flexibility have fueled its adoption, as it handles both classification and regression problems.
+
+```{r h2o, results='hide'}
+h2o.init(nthreads = -1)
+
+randomForest_model <- h2o.loadModel("group2-randomForest.h2o")
+summary(randomForest_model)
+
+# x_test_data2 <- data.frame(
+#   modelId = "distilbert-base-uncased-finetuned-sst-2-english",
+#   private = 0,
+#   downloads = 26976309,
+#   createdAt = "2022-03-02T23:29:04.000Z",
+#   pipeline_tag = "text-classification",
+#   transformers = 1,
+#   endpoints_compatible = 1,
+#   pytorch = 1,
+#   autotrain_compatible = 0,
+#   license.apache.2.0 = 1,
+#   bert = 0,
+#   text.generation.inference = 0,
+#   tensorboard = 0,
+#   text.classification = 1,
+#   en = 1,
+#   jax = 0,
+#   generated_from_trainer = 0,
+#   text.generation = 0,
+#   text2text.generation = 0,
+#   gpt2 = 0,
+#   has_space = 1,
+#   model.index = 1,
+#   tf = 1,
+#   automatic.speech.recognition =0,
+#   fill.mask = 0
+# )
+
+x_test_data2 <- data.frame(
+  modelId = "distilgpt2",
+  private = 0,
+  downloads = 34333940,
+  createdAt = "2022-03-02T23:29:04.000Z",
+  pipeline_tag = "text-generation",
+  transformers = 1,
+  endpoints_compatible = 1,
+  pytorch = 1,
+  autotrain_compatible = 0,
+  license.apache.2.0 = 1,
+  bert = 0,
+  text.generation.inference = 1,
+  tensorboard = 0,
+  text.classification = 0,
+  en = 1,
+  jax = 1,
+  generated_from_trainer = 0,
+  text.generation = 1,
+  text2text.generation = 0,
+  gpt2 = 1,
+  has_space = 1,
+  model.index = 1,
+  tf = 1,
+  automatic.speech.recognition =0,
+  fill.mask = 0
+)
+
+new_observation_tbl_skim2 = partition(skim(x_test_data2))
+
+string_2_factor_names_new_observation2 <- new_observation_tbl_skim2$character$skim_variable
+rec_obj_new_observation2 <- recipe(~ ., data = x_test_data2) |>
+  step_string2factor(all_of(string_2_factor_names_new_observation2)) |>
+  step_impute_median(all_numeric()) |> # missing values in numeric columns
+  step_impute_mode(all_nominal()) |> # missing values in factor columns
+  prep()
+new_observation_processed_tbl2 <- bake(rec_obj_new_observation2, x_test_data2)
+
+new_application2 = new_observation_processed_tbl2
+
+new_observation_h2o <- as.h2o(new_application2)
+
+# Make predictions for the new observation
+predictions <- h2o.predict(randomForest_model, newdata = new_observation_h2o)
+
+# Extract the predicted value
+predicted_likes <- as.numeric(predictions$predict)
+
+#print(predicted_likes)
+
+kable(head(round(predicted_likes),1)) |> kable_styling(bootstrap_options = c("hover"))
+
+print("Actual Likes = 360")
+
+
+```
+#### The predictions here are `352` likes whereas the actual likes for this model is 360 as shown below
+
+![Actual Likes](observation.Png)
+
+#### BreakDown Chart new observation in H2O Model
+```{r results='hide'}
+X <- new_df |> select(-"likes")
+Y <- new_df |> select("likes")
+#x_train_tbl <- new_df |> select(-"likes")
+#y_train_tbl <- new_df |> select("likes")
+h2o_exp = explain_h2o(
+  randomForest_model, data = X,
+  y = Y$likes,
+  label = "H2O", type = "regression")
+h2o_exp_pdp_likes <- predict_parts(
+  explainer = h2o_exp, new_observation = new_application2, type="break_down")
+h2o_exp_pdp_likes
+```
+ 
+#### Displaying the Plot
+```{r}
+plot(h2o_exp_pdp_likes, geom = "profiles") +
+  ggtitle("Breakdown Plot for New Observation")
+```
+
+#### Observations:
+a summary of the interpretations:
+ - *Intercept (Base Value):* This is the baseline value of 'likes' when all predictors are at their reference level or zero. In your case, the intercept is around 9.332, indicating the expected 'likes' count when all other predictors are absent or at their base levels.
+*For other predictors:*
+
+ - *downloads:* For each unit increase in downloads (26976309), the predicted 'likes' ***increases*** by approximately 759.032.
+
+ - *model.index = 1:* It seems when 'model.index' is 1, it ***decreases*** the predicted 'likes' by approximately 6.615 compared to its reference level.
+
+ - *has_space = 1:* When 'has_space' is 1, it ***increases*** the predicted 'likes' by about 252.258 compared to its reference level.
+
+ - *pipeline_tag = text-classification:* When 'pipeline_tag' is 'text-classification', it ***decreases*** the predicted 'likes' by around 291.836 compared to its reference level.
+
+ - *en = 1:* When 'en' is 1, it ***decreases*** the predicted 'likes' by approximately 116.276 compared to its reference level.
+
+ - *autotrain_compatible = 0:* When 'autotrain_compatible' is 0, it ***increases*** the predicted 'likes' by about 58.664 compared to its reference level.
+
+ - *tf = 1:* When 'tf' is 1, it ***decreases*** the predicted 'likes' by around 23.778 compared to its reference level.
+
+ - *license.apache.2.0 = 1:* When 'license.apache.2.0' is 1, it ***decreases*** the predicted 'likes' by approximately 67.975 compared to its reference level.
+
+ - *endpoints_compatible = 1:* When 'endpoints_compatible' is 1, it ***decreases*** the predicted 'likes' by about 2.872 compared to its reference level.
+
+These interpretations are based on the breakdown analysis and how each feature contributes to the predicted outcome ('likes') relative to their reference levels or base values.
+
+
